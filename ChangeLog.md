@@ -1,6 +1,24 @@
 ## Changes between 2.9.0 and 2.10.0 (unreleased)
 
-No changes yet.
+### Lossless Field Table Decoding
+
+The same Ruby integer can be carried by different AMQP 0-9-1 wire types,
+so once a field table is decoded into a plain Hash, a forwarding
+application can no longer tell which wire type a value originally used.
+
+`AMQ::Protocol::LosslessTable.decode` is a new explicit decoding entry
+point that preserves that information. Every field decodes into an
+`AMQ::Protocol::TaggedValue` which retains the integer width, the
+decimal scale, the string vs. byte array type tag, and the original bit
+pattern of 32-bit floats. Re-encoding a decoded table reproduces the
+original bytes, and nested values can be modified before re-encoding
+while unmodified values keep their representation.
+
+Duplicate field names are kept in wire order and stay observable via
+`#entries` and `#duplicate_keys` instead of being silently collapsed
+into a Hash. `#to_h` offers the collapsing behavior explicitly.
+
+`AMQ::Protocol::Table.decode` and `.encode` are unchanged.
 
 
 ## Changes between 2.8.0 and 2.9.0 (Aug 26, 2026)

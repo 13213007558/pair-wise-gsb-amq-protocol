@@ -4,6 +4,7 @@
 require "amq/protocol/type_constants"
 require "amq/protocol/table_value_encoder"
 require "amq/protocol/table_value_decoder"
+require "amq/protocol/lossless_table"
 
 module AMQ
   module Protocol
