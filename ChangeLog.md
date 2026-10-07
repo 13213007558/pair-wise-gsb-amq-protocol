@@ -1,6 +1,28 @@
 ## Changes between 2.9.0 and 2.10.0 (unreleased)
 
-No changes yet.
+### Socket-Free Content Assembler
+
+`AMQ::Protocol::ContentAssembler` assembles already decoded frames into
+complete `AMQ::Protocol::Content` objects for content-bearing methods such as
+`basic.publish`, `basic.deliver` and `basic.return` without depending on a
+socket or any IO adapter
+
+Frames for different channels may be interleaved: assembly state is tracked
+per channel, and method parameters, header properties and the body are all
+preserved
+
+Heartbeat frames and method frames that carry no content pass through without
+advancing a pending message. Error states now report precise status:
+
+* a new method frame on a channel whose body is still incomplete raises
+  `UnexpectedMethodFrame` with received, expected and remaining byte counts
+* a body frame after a header that declared a zero-length body raises
+  `UnexpectedBodyFrame`
+* a connection ending with an incomplete frameset raises
+  `IncompleteContentError`, including when the header frame never arrived
+
+`AMQ::Protocol::Basic::Publish` now also responds to `.decode`, so received
+publishes can be assembled the same way as deliveries and returns
 
 
 ## Changes between 2.8.0 and 2.9.0 (Aug 26, 2026)

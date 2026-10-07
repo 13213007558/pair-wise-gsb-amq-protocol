@@ -1782,8 +1782,34 @@ module AMQ
         @name = "basic.publish"
         @method_id = 40
         @index = 0x003C0028 # 60, 40, 3932200
-        @packed_indexes = [60, 40].pack(PACK_UINT16_X2).freeze
+       @packed_indexes = [60, 40].pack(PACK_UINT16_X2).freeze
 
+
+        # @return
+        def self.decode(data)
+          offset = 0
+          offset += 2 # ticket, ignored
+          length = data.getbyte(offset)
+          offset += 1
+          exchange = data.byteslice(offset, length)
+          offset += length
+          length = data.getbyte(offset)
+          offset += 1
+          routing_key = data.byteslice(offset, length)
+          offset += length
+          bit_buffer = data.getbyte(offset)
+          mandatory = (bit_buffer & (1 << 0)) != 0
+          immediate = (bit_buffer & (1 << 1)) != 0
+          self.new(exchange, routing_key, mandatory, immediate)
+        end
+
+        attr_reader :exchange, :routing_key, :mandatory, :immediate
+        def initialize(exchange, routing_key, mandatory, immediate)
+          @exchange = exchange
+          @routing_key = routing_key
+          @mandatory = mandatory
+          @immediate = immediate
+        end
 
         def self.has_content?
           true
@@ -2385,4 +2411,3 @@ module AMQ
     end
   end
 end
-

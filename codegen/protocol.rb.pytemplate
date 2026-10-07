@@ -234,6 +234,34 @@ module AMQ
         @index = ${method.binary()}
         @packed_indexes = [${klass.index}, ${method.index}].pack(PACK_UINT16_X2).freeze
 
+        % if klass.name == "basic" and method.name == "publish":
+        # @return
+        def self.decode(data)
+          offset = 0
+          offset += 2 # ticket, ignored
+          length = data.getbyte(offset)
+          offset += 1
+          exchange = data.byteslice(offset, length)
+          offset += length
+          length = data.getbyte(offset)
+          offset += 1
+          routing_key = data.byteslice(offset, length)
+          offset += length
+          bit_buffer = data.getbyte(offset)
+          mandatory = (bit_buffer & (1 << 0)) != 0
+          immediate = (bit_buffer & (1 << 1)) != 0
+          self.new(exchange, routing_key, mandatory, immediate)
+        end
+
+        attr_reader :exchange, :routing_key, :mandatory, :immediate
+        def initialize(exchange, routing_key, mandatory, immediate)
+          @exchange = exchange
+          @routing_key = routing_key
+          @mandatory = mandatory
+          @immediate = immediate
+        end
+        % endif
+
         % if (spec.type == "client" and method.accepted_by("client")) or (spec.type == "server" and method.accepted_by("server") or spec.type == "all"):
         # @return
         def self.decode(data)
