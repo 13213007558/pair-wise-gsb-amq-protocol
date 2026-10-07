@@ -1,6 +1,8 @@
 # encoding: binary
 # frozen_string_literal: true
 
+require "amq/protocol/raw_method"
+
 module AMQ
   module Protocol
     class Frame
@@ -132,11 +134,19 @@ This functionality is part of the https://github.com/ruby-amqp/amq-client librar
       end
 
       def final?
-        !self.method_class.has_content?
+        klass = self.method_class
+        # unknown (extension) methods are assumed to not carry content
+        klass.nil? ? true : !klass.has_content?
       end # final?
 
       def decode_payload
-        self.method_class.decode(@payload.byteslice(4..-1))
+        klass = self.method_class
+        if klass.nil?
+          klass_id, method_id = self.payload.unpack(PACK_UINT16_X2)
+          RawMethod.new(klass_id, method_id, @payload.byteslice(4..-1))
+        else
+          klass.decode(@payload.byteslice(4..-1))
+        end
       end
     end
 

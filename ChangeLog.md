@@ -1,6 +1,19 @@
 ## Changes between 2.9.0 and 2.10.0 (unreleased)
 
-No changes yet.
+### Runtime Extension Registry
+
+Broker-specific AMQP 0-9-1 extension classes and methods can now be
+registered at runtime via `AMQ::Protocol::ExtensionRegistry`, without
+modifying the generated `AMQ::Protocol::Client` code. Encoders and
+decoders are derived from declared class ids, method ids and field
+layouts, including adjacent bit field packing and content property
+flags spanning multiple 16-bit words.
+
+Each registry instance is isolated, and registrations that collide with
+built-in class or method ids are rejected. Method frames with unknown
+class/method ids now decode to `AMQ::Protocol::RawMethod`, which
+preserves the method identity and the raw, unparsed payload instead of
+raising.
 
 
 ## Changes between 2.8.0 and 2.9.0 (Aug 26, 2026)
