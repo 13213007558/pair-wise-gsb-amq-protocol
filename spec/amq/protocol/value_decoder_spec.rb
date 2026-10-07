@@ -213,7 +213,7 @@ module AMQ
         end
 
         it "decodes TYPE_32BIT_FLOAT" do
-          data = array_binary("f" + [1.5].pack("f"))
+          data = array_binary("f" + [1.5].pack("g"))
           result, _ = described_class.decode_array(data, 1)
           expect(result.first).to be_within(0.001).of(1.5)
         end

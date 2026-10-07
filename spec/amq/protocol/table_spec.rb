@@ -206,7 +206,7 @@ module AMQ
         end
 
         it "decodes TYPE_32BIT_FLOAT from raw binary" do
-          binary = [7].pack("N") + "\x01kf" + [1.5].pack("f")
+          binary = [7].pack("N") + "\x01kf" + [1.5].pack("g")
           result = Table.decode(binary.force_encoding("BINARY"))
           expect(result["k"]).to be_within(0.001).of(1.5)
         end
@@ -283,6 +283,117 @@ module AMQ
         end
 
       end # describe
+
+      describe ".decode_with_types" do
+        let(:wire) do
+          "\x00\x00\x00\x9D" \
+          "\x04byteb\x01" \
+          "\x05shorts\x00\x02" \
+          "\x04uintI\x00\x00\x00\x03" \
+          "\x04longl\x00\x00\x00\x00\x00\x00\x00\x04" \
+          "\adecimalD\x03\x00\x00\x04\xE2" \
+          "\x06stringS\x00\x00\x00\x01a" \
+          "\x05bytesx\x00\x00\x00\x01a" \
+          "\x03f32f?\xC0\x00\x00" \
+          "\x03f64d?\xF8\x00\x00\x00\x00\x00\x00" \
+          "\x06nestedF\x00\x00\x00\v\x05innerI\x00\x00\x00\t" \
+          "\x04listA\x00\x00\x00\bb\ax\x00\x00\x00\x01z" \
+          "\x04sameb\x01" \
+          "\x04sames\x00\x02".b
+        end
+
+        it "returns ordered entries with AMQP wire types" do
+          entries = described_class.decode_with_types(wire)
+
+          expect(entries).to be_an(Array)
+          expect(entries.map(&:first)).to eq(%w[byte short uint long decimal string bytes f32 f64 nested list same same])
+
+          by_name = entries.to_h
+          expect(by_name["byte"]).to have_attributes(type: "b", value: 1)
+          expect(by_name["short"]).to have_attributes(type: "s", value: 2)
+          expect(by_name["uint"]).to have_attributes(type: "I", value: 3)
+          expect(by_name["long"]).to have_attributes(type: "l", value: 4)
+          expect(by_name["string"]).to have_attributes(type: "S", value: "a".b)
+          expect(by_name["bytes"]).to have_attributes(type: "x", value: "a".b)
+          expect(by_name["decimal"]).to have_attributes(type: "D", value: BigDecimal("1.250"), scale: 3)
+          expect(by_name["f32"]).to have_attributes(type: "f", value: 1.5, representation: "?\xC0\x00\x00".b)
+          expect(by_name["f64"]).to have_attributes(type: "d", value: 1.5, representation: "?\xF8\x00\x00\x00\x00\x00\x00".b)
+        end
+
+        it "decodes nested tables and arrays without converting them to hashes" do
+          nested = described_class.decode_with_types(wire).assoc("nested").last
+          list = described_class.decode_with_types(wire).assoc("list").last
+
+          expect(nested.type).to eq("F")
+          expect(nested.value).to eq([["inner", Table::TypedValue.new("I", 9)]])
+          expect(list.type).to eq("A")
+          expect(list.value.map(&:type)).to eq(%w[b x])
+        end
+
+        it "preserves duplicate field names as separate entries" do
+          duplicates = described_class.decode_with_types(wire).last(2)
+
+          expect(duplicates.map { |key, value| [key, value.type, value.value] }).to eq([
+            ["same", "b", 1],
+            ["same", "s", 2]
+          ])
+        end
+
+        it "round trips unmodified values exactly" do
+          expect(described_class.encode_with_types(described_class.decode_with_types(wire))).to eq(wire)
+        end
+
+        it "re-encodes unchanged values with their original representation after a nested edit" do
+          entries = described_class.decode_with_types(wire)
+          entries.assoc("nested").last.value.assoc("inner").last.value = 10
+
+          reencoded = described_class.encode_with_types(entries)
+          decoded = described_class.decode_with_types(reencoded)
+
+          expect(decoded.assoc("nested").last.value.assoc("inner").last.value).to eq(10)
+          expect(decoded.assoc("f32").last.representation).to eq("?\xC0\x00\x00".b)
+          expect(decoded.assoc("decimal").last.scale).to eq(3)
+          expect(decoded.assoc("list").last.value.map(&:type)).to eq(%w[b x])
+        end
+
+        it "uses the modified value width when a typed value is replaced" do
+          entries = described_class.decode_with_types(wire)
+          entries.assoc("uint").last.value = 4_000_000_001
+          entries.assoc("f32").last.value = 2.5
+
+          decoded = described_class.decode_with_types(described_class.encode_with_types(entries))
+
+          expect(decoded.assoc("uint").last).to have_attributes(type: "I", value: 4_000_000_001)
+          expect(decoded.assoc("f32").last).to have_attributes(type: "f", value: 2.5)
+        end
+
+        it "allows nested typed values to be replaced with plain Ruby values" do
+          entries = described_class.decode_with_types(wire)
+          entries.assoc("list").last.value[0] = 42
+
+          decoded = described_class.decode_with_types(described_class.encode_with_types(entries))
+          first = decoded.assoc("list").last.value.first
+
+          expect(first).to have_attributes(type: "l", value: 42)
+        end
+
+        it "preserves non-canonical float bit patterns" do
+          float_wire = described_class.encode_with_types([
+            ["double", Table::TypedValue.new("d", 0.0, representation: "\x7F\xF8\x00\x00\x00\x00\x00\x01".b)],
+            ["float", Table::TypedValue.new("f", 0.0, representation: "\x7F\xC0\x00\x01".b)]
+          ])
+
+          decoded = described_class.decode_with_types(float_wire)
+
+          expect(decoded.assoc("double").last.value).to be_nan
+          expect(decoded.assoc("float").last.value).to be_nan
+          expect(described_class.encode_with_types(decoded)).to eq(float_wire)
+        end
+
+        it "does not change the existing hash return type" do
+          expect(described_class.decode(wire)).to be_a(Hash)
+        end
+      end
 
       describe ".length" do
         it "returns the table length from binary data" do

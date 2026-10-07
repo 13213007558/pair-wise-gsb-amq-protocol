@@ -1,7 +1,9 @@
 # encoding: binary
 # frozen_string_literal: true
 
+require "bigdecimal"
 require "amq/protocol/type_constants"
+require "amq/protocol/table_typed_value"
 require "amq/protocol/table_value_encoder"
 require "amq/protocol/table_value_decoder"
 
@@ -50,6 +52,38 @@ module AMQ
         [buffer.bytesize].pack(PACK_UINT32_BE) << buffer
       end
 
+      def self.encode_entries(entries)
+        buffer = +''
+
+        entries.each do |key, value|
+          key = key.to_s
+          buffer << key.bytesize.chr << key
+          buffer << TableValueEncoder.encode_typed(value).force_encoding(buffer.encoding)
+        end
+
+        [buffer.bytesize].pack(PACK_UINT32_BE) << buffer
+      end
+
+      def self.decode_entries(data)
+        entries      = []
+        table_length = data.unpack1(PACK_UINT32_BE)
+        offset       = 4
+
+        while offset < 4 + table_length
+          key, offset  = decode_table_key(data, offset)
+          value, offset = TableValueDecoder.decode_typed_value(data, offset)
+          entries << [key, value]
+        end
+
+        entries
+      end
+
+      class << self
+        alias decode_lossless decode_entries
+        alias encode_lossless encode_entries
+        alias decode_with_types decode_entries
+        alias encode_with_types encode_entries
+      end
 
 
 

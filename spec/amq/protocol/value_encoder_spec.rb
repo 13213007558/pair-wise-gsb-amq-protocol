@@ -156,6 +156,18 @@ module AMQ
         expect { described_class.encode(Object.new) }.to raise_error(ArgumentError)
       end
 
+      it "encodes typed values with their declared AMQP type" do
+        value = Table::TypedValue.new("I", 4_000_000_000)
+
+        expect(described_class.encode(value)).to eq("I\xEEk(\x00".b)
+      end
+
+      it "rejects integers outside their declared AMQP width" do
+        value = Table::TypedValue.new("I", 4_294_967_296)
+
+        expect { described_class.encode(value) }.to raise_error(RangeError)
+      end
+
     end # TableValueEncoder
   end # Protocol
 end # AMQ
